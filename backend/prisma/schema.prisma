@@ -1,0 +1,337 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum RolSistema {
+  ADMINISTRADOR
+  USUARIO
+}
+
+enum ModalidadGrupo {
+  PRESENCIAL
+  VIRTUAL
+  HIBRIDA
+}
+
+enum EstadoInscripcion {
+  ACTIVA
+  RETIRADA
+  FINALIZADA
+}
+
+enum TipoResponsable {
+  DOCENTE
+  REGISTRADOR_ASISTENCIA
+}
+
+enum EstadoAsistencia {
+  PRESENTE
+  FALTA
+  TARDANZA
+}
+
+enum EstadoImportacion {
+  PENDIENTE
+  PROCESANDO
+  COMPLETADA
+  COMPLETADA_CON_ERRORES
+  FALLIDA
+}
+
+model Ciudad {
+  id            Int      @id @default(autoincrement())
+  nombre        String   @unique @db.VarChar(100)
+  activo        Boolean  @default(true)
+  creadoEn      DateTime @default(now()) @map("creado_en")
+  actualizadoEn DateTime @updatedAt @map("actualizado_en")
+
+  filiales Filial[]
+
+  @@map("ciudades")
+}
+
+model Filial {
+  id            Int      @id @default(autoincrement())
+  nombre        String   @db.VarChar(120)
+  activo        Boolean  @default(true)
+  ciudadId      Int      @map("ciudad_id")
+  creadoEn      DateTime @default(now()) @map("creado_en")
+  actualizadoEn DateTime @updatedAt @map("actualizado_en")
+
+  ciudad   Ciudad    @relation(fields: [ciudadId], references: [id], onDelete: Restrict)
+  personas Persona[]
+
+  @@unique([ciudadId, nombre])
+  @@map("filiales")
+}
+
+model Persona {
+  id            Int      @id @default(autoincrement())
+  dni           String?  @unique @db.VarChar(8)
+  nombres       String   @db.VarChar(100)
+  apellidos     String   @db.VarChar(120)
+  correo        String?  @unique @db.VarChar(150)
+  telefono      String?  @db.VarChar(20)
+  activo        Boolean  @default(true)
+  filialId      Int      @map("filial_id")
+  creadoEn      DateTime @default(now()) @map("creado_en")
+  actualizadoEn DateTime @updatedAt @map("actualizado_en")
+
+  filial        Filial        @relation(fields: [filialId], references: [id], onDelete: Restrict)
+  usuario       Usuario?
+  inscripciones Inscripcion[]
+
+  @@index([apellidos, nombres])
+  @@map("personas")
+}
+
+model Usuario {
+  id                  Int        @id @default(autoincrement())
+  personaId           Int        @unique @map("persona_id")
+  passwordHash        String     @map("password_hash") @db.VarChar(255)
+  rol                 RolSistema @default(USUARIO)
+  debeCambiarPassword Boolean    @default(true) @map("debe_cambiar_password")
+  activo              Boolean    @default(true)
+  ultimoAcceso        DateTime?  @map("ultimo_acceso")
+  creadoEn            DateTime   @default(now()) @map("creado_en")
+  actualizadoEn       DateTime   @updatedAt @map("actualizado_en")
+
+  persona                   Persona                 @relation(fields: [personaId], references: [id], onDelete: Restrict)
+  asignacionesResponsable   AsignacionResponsable[]
+  sesionesCreadas           SesionClase[]
+  asistenciasRegistradas    Asistencia[]
+  calificacionesRegistradas Calificacion[]
+  importaciones             ImportacionExcel[]
+
+  @@map("usuarios")
+}
+
+model PeriodoAcademico {
+  id            Int       @id @default(autoincrement())
+  nombre        String    @unique @db.VarChar(30)
+  anio          Int
+  fechaInicio   DateTime? @map("fecha_inicio") @db.Date
+  fechaFin      DateTime? @map("fecha_fin") @db.Date
+  cerrado       Boolean   @default(false)
+  creadoEn      DateTime  @default(now()) @map("creado_en")
+  actualizadoEn DateTime  @updatedAt @map("actualizado_en")
+
+  ediciones CursoPeriodo[]
+
+  @@index([anio])
+  @@map("periodos_academicos")
+}
+
+model Curso {
+  id            Int      @id @default(autoincrement())
+  codigo        String?  @unique @db.VarChar(30)
+  nombre        String   @unique @db.VarChar(150)
+  descripcion   String?  @db.Text
+  activo        Boolean  @default(true)
+  creadoEn      DateTime @default(now()) @map("creado_en")
+  actualizadoEn DateTime @updatedAt @map("actualizado_en")
+
+  ediciones CursoPeriodo[]
+
+  @@map("cursos")
+}
+
+model CursoPeriodo {
+  id            Int       @id @default(autoincrement())
+  cursoId       Int       @map("curso_id")
+  periodoId     Int       @map("periodo_id")
+  nombre        String    @db.VarChar(150)
+  fechaInicio   DateTime? @map("fecha_inicio") @db.Date
+  fechaFin      DateTime? @map("fecha_fin") @db.Date
+  activo        Boolean   @default(true)
+  creadoEn      DateTime  @default(now()) @map("creado_en")
+  actualizadoEn DateTime  @updatedAt @map("actualizado_en")
+
+  curso        Curso            @relation(fields: [cursoId], references: [id], onDelete: Restrict)
+  periodo      PeriodoAcademico @relation(fields: [periodoId], references: [id], onDelete: Restrict)
+  grupos       Grupo[]
+  evaluaciones Evaluacion[]
+
+  @@unique([cursoId, periodoId])
+  @@map("cursos_periodos")
+}
+
+model Grupo {
+  id             Int            @id @default(autoincrement())
+  cursoPeriodoId Int            @map("curso_periodo_id")
+  nombre         String         @db.VarChar(100)
+  modalidad      ModalidadGrupo @default(PRESENCIAL)
+  activo         Boolean        @default(true)
+  creadoEn       DateTime       @default(now()) @map("creado_en")
+  actualizadoEn  DateTime       @updatedAt @map("actualizado_en")
+
+  cursoPeriodo  CursoPeriodo            @relation(fields: [cursoPeriodoId], references: [id], onDelete: Restrict)
+  inscripciones Inscripcion[]
+  responsables  AsignacionResponsable[]
+  sesiones      SesionClase[]
+
+  @@unique([cursoPeriodoId, nombre])
+  @@map("grupos")
+}
+
+model Inscripcion {
+  id               Int               @id @default(autoincrement())
+  personaId        Int               @map("persona_id")
+  grupoId          Int               @map("grupo_id")
+  estado           EstadoInscripcion @default(ACTIVA)
+  fechaInscripcion DateTime          @default(now()) @map("fecha_inscripcion") @db.Date
+  fechaRetiro      DateTime?         @map("fecha_retiro") @db.Date
+  motivoRetiro     String?           @map("motivo_retiro") @db.Text
+  creadoEn         DateTime          @default(now()) @map("creado_en")
+  actualizadoEn    DateTime          @updatedAt @map("actualizado_en")
+
+  persona        Persona        @relation(fields: [personaId], references: [id], onDelete: Restrict)
+  grupo          Grupo          @relation(fields: [grupoId], references: [id], onDelete: Restrict)
+  asistencias    Asistencia[]
+  calificaciones Calificacion[]
+
+  @@unique([personaId, grupoId])
+  @@index([grupoId, estado])
+  @@map("inscripciones")
+}
+
+model AsignacionResponsable {
+  id              Int             @id @default(autoincrement())
+  usuarioId       Int             @map("usuario_id")
+  grupoId         Int             @map("grupo_id")
+  tipo            TipoResponsable
+  activo          Boolean         @default(true)
+  fechaAsignacion DateTime        @default(now()) @map("fecha_asignacion") @db.Date
+  fechaFin        DateTime?       @map("fecha_fin") @db.Date
+  creadoEn        DateTime        @default(now()) @map("creado_en")
+  actualizadoEn   DateTime        @updatedAt @map("actualizado_en")
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
+  grupo   Grupo   @relation(fields: [grupoId], references: [id], onDelete: Restrict)
+
+  @@unique([usuarioId, grupoId, tipo])
+  @@index([grupoId, activo])
+  @@map("asignaciones_responsables")
+}
+
+model SesionClase {
+  id            Int      @id @default(autoincrement())
+  grupoId       Int      @map("grupo_id")
+  fecha         DateTime @db.Date
+  tema          String?  @db.VarChar(200)
+  observaciones String?  @db.Text
+  creadaPorId   Int      @map("creada_por_id")
+  creadoEn      DateTime @default(now()) @map("creado_en")
+  actualizadoEn DateTime @updatedAt @map("actualizado_en")
+
+  grupo       Grupo        @relation(fields: [grupoId], references: [id], onDelete: Restrict)
+  creadaPor   Usuario      @relation(fields: [creadaPorId], references: [id], onDelete: Restrict)
+  asistencias Asistencia[]
+
+  @@unique([grupoId, fecha])
+  @@index([creadaPorId])
+  @@map("sesiones_clase")
+}
+
+model Asistencia {
+  id              Int              @id @default(autoincrement())
+  sesionId        Int              @map("sesion_id")
+  inscripcionId   Int              @map("inscripcion_id")
+  estado          EstadoAsistencia
+  observaciones   String?          @db.Text
+  registradoPorId Int              @map("registrado_por_id")
+  registradoEn    DateTime         @default(now()) @map("registrado_en")
+  actualizadoEn   DateTime         @updatedAt @map("actualizado_en")
+
+  sesion        SesionClase @relation(fields: [sesionId], references: [id], onDelete: Restrict)
+  inscripcion   Inscripcion @relation(fields: [inscripcionId], references: [id], onDelete: Restrict)
+  registradoPor Usuario     @relation(fields: [registradoPorId], references: [id], onDelete: Restrict)
+
+  @@unique([sesionId, inscripcionId])
+  @@index([inscripcionId, estado])
+  @@index([registradoPorId])
+  @@map("asistencias")
+}
+
+model Evaluacion {
+  id             Int       @id @default(autoincrement())
+  cursoPeriodoId Int       @map("curso_periodo_id")
+  nombre         String    @db.VarChar(100)
+  descripcion    String?   @db.Text
+  ponderacion    Decimal?  @db.Decimal(5, 2)
+  notaMaxima     Decimal   @default(20) @map("nota_maxima") @db.Decimal(5, 2)
+  fecha          DateTime? @db.Date
+  activo         Boolean   @default(true)
+  creadoEn       DateTime  @default(now()) @map("creado_en")
+  actualizadoEn  DateTime  @updatedAt @map("actualizado_en")
+
+  cursoPeriodo   CursoPeriodo   @relation(fields: [cursoPeriodoId], references: [id], onDelete: Restrict)
+  calificaciones Calificacion[]
+
+  @@unique([cursoPeriodoId, nombre])
+  @@map("evaluaciones")
+}
+
+model Calificacion {
+  id              Int      @id @default(autoincrement())
+  evaluacionId    Int      @map("evaluacion_id")
+  inscripcionId   Int      @map("inscripcion_id")
+  nota            Decimal  @db.Decimal(5, 2)
+  observaciones   String?  @db.Text
+  registradoPorId Int      @map("registrado_por_id")
+  registradoEn    DateTime @default(now()) @map("registrado_en")
+  actualizadoEn   DateTime @updatedAt @map("actualizado_en")
+
+  evaluacion    Evaluacion  @relation(fields: [evaluacionId], references: [id], onDelete: Restrict)
+  inscripcion   Inscripcion @relation(fields: [inscripcionId], references: [id], onDelete: Restrict)
+  registradoPor Usuario     @relation(fields: [registradoPorId], references: [id], onDelete: Restrict)
+
+  @@unique([evaluacionId, inscripcionId])
+  @@index([inscripcionId])
+  @@index([registradoPorId])
+  @@map("calificaciones")
+}
+
+model ImportacionExcel {
+  id            Int               @id @default(autoincrement())
+  nombreArchivo String            @map("nombre_archivo") @db.VarChar(255)
+  tipo          String            @db.VarChar(50)
+  estado        EstadoImportacion @default(PENDIENTE)
+  totalFilas    Int               @default(0) @map("total_filas")
+  filasExitosas Int               @default(0) @map("filas_exitosas")
+  filasConError Int               @default(0) @map("filas_con_error")
+  usuarioId     Int               @map("usuario_id")
+  creadoEn      DateTime          @default(now()) @map("creado_en")
+  finalizadoEn  DateTime?         @map("finalizado_en")
+
+  usuario Usuario            @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
+  errores ErrorImportacion[]
+
+  @@index([usuarioId, creadoEn])
+  @@map("importaciones_excel")
+}
+
+model ErrorImportacion {
+  id            Int      @id @default(autoincrement())
+  importacionId Int      @map("importacion_id")
+  numeroFila    Int      @map("numero_fila")
+  columna       String?  @db.VarChar(150)
+  valor         String?  @db.Text
+  mensaje       String   @db.Text
+  creadoEn      DateTime @default(now()) @map("creado_en")
+
+  importacion ImportacionExcel @relation(fields: [importacionId], references: [id], onDelete: Cascade)
+
+  @@index([importacionId, numeroFila])
+  @@map("errores_importacion")
+}
